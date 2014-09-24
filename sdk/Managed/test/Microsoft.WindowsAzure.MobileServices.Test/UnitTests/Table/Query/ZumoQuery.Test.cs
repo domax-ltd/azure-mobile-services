@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
-using System.Threading;
+using Microsoft.WindowsAzure.MobileServices.Query;
 using Microsoft.WindowsAzure.MobileServices.TestFramework;
 using Newtonsoft.Json;
 
@@ -65,7 +65,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             IMobileServiceTableQuery<U> query = getQuery(table);
             MobileServiceTableQueryProvider provider = new MobileServiceTableQueryProvider();
             MobileServiceTableQueryDescription compiledQuery = provider.Compile((MobileServiceTableQuery<U>)query);
-            Log(">>> " + compiledQuery.ToQueryString());
+            Log(">>> " + compiledQuery.ToODataString());
             return compiledQuery;
         }
 
@@ -287,10 +287,15 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             query = Compile<Product, Product>(table => table.Where(p => !p.InStock));
             Assert.AreEqual("not(InStock)", query.Filter);
+        }
 
+        [Tag("notXamarin_iOS")] // LambdaExpression.Compile() is not supported on Xamarin.iOS
+        [TestMethod]
+        public void Filtering_PartialEval()
+        {
             // Allow New Operations
             float foo = 10;
-            query = Compile<Product, Product>(table => table.Where(p => p.Weight <= new Product() { Weight = foo }.Weight || p.InStock == true));
+            var query = Compile<Product, Product>(table => table.Where(p => p.Weight <= new Product() { Weight = foo }.Weight || p.InStock == true));
             Assert.AreEqual("((Weight le 10f) or (InStock eq true))", query.Filter);
 
             query = Compile<Product, Product>(table => table.Where(p => p.Weight <= new Product(15) { Weight = foo }.Weight || p.InStock == true));
@@ -304,7 +309,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.AreEqual("((Weight le 10f) or (InStock eq true))", query.Filter);
 
             query = Compile<Product, Product>(table => table.Where(p => p.Created == new DateTime(1994, 10, 14, 0, 0, 0, DateTimeKind.Utc)));
-            Assert.AreEqual("(Created eq datetime'1994-10-14T00:00:00.000Z')", query.Filter);
+            Assert.AreEqual("(Created eq datetime'1994-10-14T00%3A00%3A00.000Z')", query.Filter);
         }
 
         [TestMethod]
@@ -320,7 +325,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 .Take(10));
             Assert.AreEqual(
                 "$filter=((Price le 10M) and (Weight gt 10f)) and not(InStock)&$orderby=Price desc,Name&$skip=20&$top=10&$select=Name,Price,Weight,WeightInKG",
-                query.ToQueryString());
+                query.ToODataString());
         }
 
         [TestMethod]
@@ -865,7 +870,8 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                from p in table
                where p.Updated == DateTime.MinValue
                select p);
-            Assert.AreEqual(query.Filter, "(Updated eq datetime'0001-01-01T08:00:00.000Z')");
+            string minDateAsODataString = DateTime.MinValue.ToUniversalTime().ToString("yyyy'-'MM'-'dd'T'HH'%3A'mm'%3A'ss'.'fffK", CultureInfo.InvariantCulture);
+            Assert.AreEqual(query.Filter, "(Updated eq datetime'" + minDateAsODataString + "')");
 
             query = Compile<Product, Product>(table =>
                 from p in table
@@ -998,7 +1004,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.AreEqual("Product", query.TableName);
             Assert.AreEqual(0, query.Skip);
             Assert.IsFalse(query.Top.HasValue);
-            Assert.AreEqual("$skip=0", query.ToQueryString());
+            Assert.AreEqual("$skip=0", query.ToODataString());
         }
 
         [TestMethod]
@@ -1008,7 +1014,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.AreEqual("Product", query.TableName);
             Assert.AreEqual(0, query.Top);
             Assert.IsFalse(query.Skip.HasValue);
-            Assert.AreEqual("$top=0", query.ToQueryString());
+            Assert.AreEqual("$top=0", query.ToODataString());
         }
 
         [TestMethod]
@@ -1020,7 +1026,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 select p);
             Assert.AreEqual("(Weight gt 1.3f)", query.Filter);
         }
-        
+
         [TestMethod]
         public void DoublesSerializedAsDoubles()
         {
@@ -1032,9 +1038,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             query = Compile<Product, Product>(table =>
                 from p in table
-                where (p.Weight * 31.213 ) == 60200000000000000000000000.0
+                where (p.Weight * 31.213) == 60200000000000000000000000.0
                 select p);
             Assert.AreEqual("((Weight mul 31.213) eq 6.02E+25)", query.Filter);
-        }        
+        }
     }
 }

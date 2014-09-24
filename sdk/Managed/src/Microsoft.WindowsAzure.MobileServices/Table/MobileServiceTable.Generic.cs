@@ -9,7 +9,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Net;
 using System.Threading.Tasks;
+using Microsoft.WindowsAzure.MobileServices.Query;
 using Newtonsoft.Json.Linq;
 
 namespace Microsoft.WindowsAzure.MobileServices
@@ -23,7 +25,7 @@ namespace Microsoft.WindowsAzure.MobileServices
     internal class MobileServiceTable<T> : MobileServiceTable, IMobileServiceTable<T>
     {
         private MobileServiceTableQueryProvider queryProvider;
-        private bool hasIntegerId; 
+        private bool hasIntegerId;
 
         /// <summary>
         /// Initializes a new instance of the MobileServiceTables class.
@@ -41,7 +43,7 @@ namespace Microsoft.WindowsAzure.MobileServices
             this.SystemProperties = client.Serializer.GetSystemProperties(typeof(T));
             Type idType = client.Serializer.GetIdPropertyType<T>(throwIfNotFound: false);
             this.hasIntegerId = idType == null || MobileServiceSerializer.IsIntegerId(idType);
-        }        
+        }
 
         /// <summary>
         /// Returns instances from a table.
@@ -79,6 +81,26 @@ namespace Microsoft.WindowsAzure.MobileServices
             }
 
             return query.ToEnumerableAsync();
+        }
+
+        /// <summary>
+        /// Executes a query against the table.
+        /// </summary>
+        /// <param name="query">
+        /// A query to execute.
+        /// </param>
+        /// <returns>
+        /// A task that will return with results when the query finishes.
+        /// </returns>
+        [SuppressMessage("Microsoft.Design", "CA1006:DoNotNestGenericTypesInMemberSignatures", Justification = "Generic are not nested when used via async.")]
+        public async Task<IEnumerable<U>> ReadAsync<U>(string query)
+        {
+            QueryResult result = await base.ReadAsync(query, null, MobileServiceFeatures.TypedTable | MobileServiceFeatures.ReadWithLinkHeader);
+
+            return new QueryResultEnumerable<U>(
+                result.TotalCount,
+                result.NextLink,
+                this.MobileServiceClient.Serializer.Deserialize(result.Values, typeof(U)).Cast<U>());
         }
 
         /// <summary>
@@ -120,9 +142,11 @@ namespace Microsoft.WindowsAzure.MobileServices
             if (!this.hasIntegerId)
             {
                 string unused;
-                value = RemoveSystemProperties(value, out unused);
-            } 
-            JToken insertedValue = await this.InsertAsync(value, parameters);
+                value = MobileServiceSerializer.RemoveSystemProperties(value, out unused);
+            }
+
+            JToken insertedValue = await TransformHttpException(serializer, () => this.InsertAsync(value, parameters, MobileServiceFeatures.TypedTable));
+
             serializer.Deserialize<T>(insertedValue, instance);
         }
 
@@ -163,22 +187,8 @@ namespace Microsoft.WindowsAzure.MobileServices
             MobileServiceSerializer serializer = this.MobileServiceClient.Serializer;
             JObject value = serializer.Serialize(instance) as JObject;
 
-            JToken updatedValue = null;
-            try
-            {
-                updatedValue = await this.UpdateAsync(value, parameters);
-            }
-            catch (MobileServicePreconditionFailedException ex)
-            {
-                T item = default(T);
-                try
-                {
-                    item = serializer.Deserialize<T>(ex.Value);
-                }
-                catch { }
+            JToken updatedValue = await TransformHttpException(serializer, () => this.UpdateAsync(value, parameters, MobileServiceFeatures.TypedTable));
 
-                throw new MobileServicePreconditionFailedException<T>(ex, item);
-            }
 
             serializer.Deserialize<T>(updatedValue, instance);
         }
@@ -219,7 +229,8 @@ namespace Microsoft.WindowsAzure.MobileServices
 
             MobileServiceSerializer serializer = this.MobileServiceClient.Serializer;
             JObject value = serializer.Serialize(instance) as JObject;
-            await this.DeleteAsync(value, parameters);
+
+            await this.TransformHttpException(serializer, () => this.DeleteAsync(value, parameters, MobileServiceFeatures.TypedTable));
 
             // Clear the instance id since it's no longer associated with that
             // id on the server (note that reflection is goodly enough to turn
@@ -258,7 +269,7 @@ namespace Microsoft.WindowsAzure.MobileServices
         {
             // Ensure that the id passed in is assignable to the Id property of T
             this.MobileServiceClient.Serializer.EnsureValidIdForType<T>(id);
-            JToken value = await base.LookupAsync(id, parameters);
+            JToken value = await base.LookupAsync(id, parameters, MobileServiceFeatures.TypedTable);
             return this.MobileServiceClient.Serializer.Deserialize<T>(value);
         }
 
@@ -513,7 +524,43 @@ namespace Microsoft.WindowsAzure.MobileServices
         [SuppressMessage("Microsoft.Design", "CA1006:DoNotNestGenericTypesInMemberSignatures", Justification = "Not nested when used via async pattern.")]
         public async Task<List<T>> ToListAsync()
         {
-            return new TotalCountList<T>(await this.ReadAsync());
+            return new QueryResultList<T>(await this.ReadAsync());
+        }
+
+        /// <summary>
+        /// Executes a request and transforms a 412 and 409 response to respective exception type.
+        /// </summary>
+        private async Task<JToken> TransformHttpException(MobileServiceSerializer serializer, Func<Task<JToken>> action)
+        {
+            try
+            {
+                return await action();
+            }
+            catch (MobileServiceInvalidOperationException ex)
+            {
+                if (ex.Response.StatusCode != HttpStatusCode.PreconditionFailed &&
+                    ex.Response.StatusCode != HttpStatusCode.Conflict)
+                {
+                    throw;
+                }
+
+                T item = default(T);
+                try
+                {
+                    item = serializer.Deserialize<T>(ex.Value);
+                }
+                catch { }
+
+                if (ex.Response.StatusCode == HttpStatusCode.PreconditionFailed)
+                {
+                    throw new MobileServicePreconditionFailedException<T>(ex, item);
+                }
+                else if (ex.Response.StatusCode == HttpStatusCode.Conflict)
+                {
+                    throw new MobileServiceConflictException<T>(ex, item);
+                }
+                throw;
+            }
         }
 
         /// <summary>
@@ -537,22 +584,19 @@ namespace Microsoft.WindowsAzure.MobileServices
             string query = string.Format(
                 CultureInfo.InvariantCulture,
                 "$filter=({0} eq {1})",
-                MobileServiceSerializer.IdPropertyName,
+                MobileServiceSystemColumns.Id,
                 FilterBuildingExpressionVisitor.ToODataConstant(id));
 
             // Send the query
-            JToken response = await this.ReadAsync(query, parameters);
+            QueryResult response = await this.ReadAsync(query, parameters, MobileServiceFeatures.TypedTable);
 
+            return GetSingleValue(response);
+        }
+
+        private static JObject GetSingleValue(QueryResult response)
+        {
             // Get the first element in the response
-            JObject jobject = response as JObject;
-            if (jobject == null)
-            {
-                JArray array = response as JArray;
-                if (array != null && array.Count > 0)
-                {
-                    jobject = array.FirstOrDefault() as JObject;
-                }
-            }
+            JObject jobject = response.Values.FirstOrDefault() as JObject;
 
             if (jobject == null)
             {

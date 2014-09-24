@@ -110,6 +110,74 @@ $testGroup('MobileServiceClient.js',
         $assert.isTrue(settings);
     }),
 
+    $test('CustomAPI - error response as json object')
+    .description('Verify the custom API error messages')
+    .check(function () {
+        var client = new WindowsAzure.MobileServiceClient("http://www.test.com", "123456abcdefg");
+        client = client.withFilter(function (req, next, callback) {
+            $assert.areEqual(req.type, 'POST');
+            $assert.areEqual(req.url, 'http://www.test.com/api/checkins/post');
+            callback(null, { status: 400, responseText: '{"error":"bad robot"}', getResponseHeader: function () { return 'application/json'; } });
+        });
+        client.invokeApi("checkins/post").done(function (response) {
+            $assert.fail("api call failed");
+        },
+        function (error) {
+            $assert.areEqual(error.message, "bad robot");
+        });
+    }),
+
+    $test('CustomAPI - error response as json string')
+    .description('Verify the custom API error messages')
+    .check(function () {
+        var client = new WindowsAzure.MobileServiceClient("http://www.test.com", "123456abcdefg");
+        client = client.withFilter(function (req, next, callback) {
+            $assert.areEqual(req.type, 'POST');
+            $assert.areEqual(req.url, 'http://www.test.com/api/checkins/post');
+            callback(null, { status: 400, responseText: '"bad robot"', getResponseHeader: function () { return 'application/json'; } });
+        });
+        client.invokeApi("checkins/post").done(function (response) {
+            $assert.fail("api call failed");
+        },
+        function (error) {
+            $assert.areEqual(error.message, "bad robot");
+        });
+    }),
+
+    $test('CustomAPI - error as text')
+    .description('Verify the custom API error messages')
+    .check(function () {
+        var client = new WindowsAzure.MobileServiceClient("http://www.test.com", "123456abcdefg");
+        client = client.withFilter(function (req, next, callback) {
+            $assert.areEqual(req.type, 'POST');
+            $assert.areEqual(req.url, 'http://www.test.com/api/checkins/post');
+            callback(null, { status: 400, responseText: 'bad robot', getResponseHeader: function () { return 'text/html'; } });
+        });
+        client.invokeApi("checkins/post").done(function (response) {
+            $assert.fail("api call failed");
+        },
+        function (error) {
+            $assert.areEqual(error.message, "bad robot");
+        });
+    }),
+
+    $test('CustomAPI - error as text without content type')
+    .description('Verify the custom API error messages')
+    .check(function () {
+        var client = new WindowsAzure.MobileServiceClient("http://www.test.com", "123456abcdefg");
+        client = client.withFilter(function (req, next, callback) {
+            $assert.areEqual(req.type, 'POST');
+            $assert.areEqual(req.url, 'http://www.test.com/api/checkins/post');
+            callback(null, { status: 400, responseText: 'bad robot' });
+        });
+        client.invokeApi("checkins/post").done(function (response) {
+            $assert.fail("api call failed");
+        },
+        function (error) {
+            $assert.areEqual(error.message, "Unexpected failure.");
+        });
+    }),
+
     $test('CustomAPI - just api name')
     .description('Verify the custom API url formatting')
     .check(function () {
@@ -179,11 +247,11 @@ $testGroup('MobileServiceClient.js',
     .check(function () {
         var client = new MobileServiceClient.MobileServiceClient("http://www.test.com", "123456abcdefg");
         client = client.withFilter(function (req, next, callback) {
-            $assert.areEqual(req.data, "\"2014-03-06T09:59:00.000Z\"");
+            $assert.areEqual(req.data, "\"2013-04-14T06:01:59.000Z\"");
             callback(null, { status: 200, responseText: '{"result":3}', getResponseHeader: function () { return 'application/json'; } });
         });
 
-        var date = new Date(2013, 14, 6, 1, 59);
+        var date = new Date(Date.UTC(2013, 3, 14, 6, 1, 59));
         client.invokeApi("scenarios/verifyRequestAccess", { body: date }).done(function (response) {
         }, function (error) {
             $assert.fail("api call failed");

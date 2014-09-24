@@ -18,9 +18,82 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 {
     [Tag("unit")]
     [Tag("table")]
-    public class MobileServiceTableGenericTests :TestBase
+    public class MobileServiceTableGenericTests : TestBase
     {
-        #region Read Tests
+        [AsyncTestMethod]
+        public async Task ReadAsync_WithAbsoluteUri_Generic()
+        {
+            var hijack = new TestHttpHandler();
+            hijack.SetResponseContent("[{\"col1\":\"Hey\"}]");
+            IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
+
+            IMobileServiceTable<ToDo> table = service.GetTable<ToDo>();
+
+            await table.ReadAsync<ToDo>("http://wwww.contoso.com/about?$filter=a eq b&$orderby=c");
+
+            Assert.AreEqual("TT,LH", hijack.Request.Headers.GetValues("X-ZUMO-FEATURES").First());
+            Assert.AreEqual("http://wwww.contoso.com/about?$filter=a eq b&$orderby=c", hijack.Request.RequestUri.ToString());
+        }
+
+        [AsyncTestMethod]
+        public async Task ReadAsync_Returns_IQueryResultEnumerable()
+        {
+            await TestIQueryResultEnumerable(table => table.ReadAsync<ToDo>("this is a query"));
+        }
+
+        [AsyncTestMethod]
+        public async Task ToCollectionAsync_Returns_IQueryResultEnumerable()
+        {
+            await TestIQueryResultEnumerable(async table => await table.CreateQuery().ToCollectionAsync());
+        }
+
+        [AsyncTestMethod]
+        public async Task ToEnumerableAsync_Returns_IQueryResultEnumerable()
+        {
+            await TestIQueryResultEnumerable(async table => await table.CreateQuery().ToEnumerableAsync());
+        }
+
+        [AsyncTestMethod]
+        public async Task ToListAsync_Returns_IQueryResultEnumerable()
+        {
+            await TestIQueryResultEnumerable(async table => await table.CreateQuery().ToListAsync());
+        }
+
+        private static async Task TestIQueryResultEnumerable(Func<IMobileServiceTable<ToDo>, Task<IEnumerable<ToDo>>> action)
+        {
+            var table = GetTableWithResponse(@"{
+                                                ""count"": 53,
+                                                ""results"": [
+                                                {
+                                                    ""id"":23, 
+                                                    ""col1"":""Hey"",
+                                                    ""col5"":true
+                                                }]}",
+                                                link: "http://contoso.com/tables/Todo?$top=1&$skip=2; rel=next");
+
+            IEnumerable<ToDo> result = await action(table);
+            Assert.AreEqual(result.Count(), 1);
+            var item = result.First();
+            Assert.AreEqual(item.Id, 23L);
+            Assert.AreEqual(item.Title, "Hey");
+            Assert.AreEqual(item.Complete, true);
+            var provider = result as IQueryResultEnumerable<ToDo>;
+            Assert.AreEqual(provider.TotalCount, 53L);
+            Assert.AreEqual(provider.NextLink, "http://contoso.com/tables/Todo?$top=1&$skip=2");
+        }
+
+        private static IMobileServiceTable<ToDo> GetTableWithResponse(string response, string link)
+        {
+            TestHttpHandler hijack = new TestHttpHandler();
+            hijack.SetResponseContent(response);
+            if (!String.IsNullOrEmpty(link))
+            {
+                hijack.Response.Headers.Add("Link", link);
+            }
+            IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
+            IMobileServiceTable<ToDo> table = service.GetTable<ToDo>();
+            return table;
+        }
 
         [AsyncTestMethod] // this is the default buggy behavior that we've already shipped
         public async Task ReadAsync_ModifiesStringId_IfItContainsIsoDateValue()
@@ -164,7 +237,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 string jsonTestId = testId.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
                 hijack.SetResponseContent("[{\"id\":\"" + jsonTestId + "\",\"String\":\"Hey\"}]");
-                
+
                 IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
 
                 IMobileServiceTable<StringIdType> table = service.GetTable<StringIdType>();
@@ -212,7 +285,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 string jsonTestId = testId.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
                 hijack.SetResponseContent("[{\"id\":\"" + jsonTestId + "\",\"String\":\"Hey\"}]");
-                
+
                 IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
 
                 IMobileServiceTable<StringIdType> table = service.GetTable<StringIdType>();
@@ -588,10 +661,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 Assert.AreEqual(hijack.Request.RequestUri.AbsoluteUri, expectedUri.AbsoluteUri);
             }
         }
-
-        #endregion Read Tests
-
-        #region Lookup Tests
 
         [AsyncTestMethod]
         public async Task LookupAsyncWithStringIdTypeAndStringIdResponseContent()
@@ -1017,10 +1086,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.AreEqual("Hello", expected.String);
         }
 
-        #endregion Lookup Tests
-
-        #region Refresh Tests
-
         [AsyncTestMethod]
         public async Task RefreshAsyncWithStringIdTypeAndStringIdResponseContent()
         {
@@ -1121,7 +1186,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 StringIdType item = new StringIdType() { Id = testId, String = "what?" };
                 await table.RefreshAsync(item);
-                
+
                 string idForOdataQuery = Uri.EscapeDataString(testId.Replace("'", "''"));
                 Uri expectedUri = new Uri(string.Format("http://www.test.com/tables/StringIdType?$filter=(id eq '{0}')", idForOdataQuery));
 
@@ -1176,7 +1241,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 }
 
                 Assert.IsNotNull(exception);
-                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") || 
+                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") ||
                               exception.Message.Contains("is longer than the max string id length of 255 characters"));
             }
         }
@@ -1416,10 +1481,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.IsNotNull(expected);
         }
 
-        #endregion Refresh Tests
-
-        #region Insert Tests
-
         [AsyncTestMethod]
         public async Task InsertAsyncWithStringIdTypeAndStringIdResponseContent()
         {
@@ -1630,9 +1691,33 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 }
 
                 Assert.IsNotNull(exception);
-                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") || 
+                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") ||
                               exception.Message.Contains("is longer than the max string id length of 255 characters"));
             }
+        }
+
+        [AsyncTestMethod]
+        public async Task InsertAsyncWithStringIdAndList_DoesNotDuplicateList()
+        {
+            TestHttpHandler hijack = new TestHttpHandler();
+            hijack.SetResponseContent("{\"id\":\"an id\",\"Values\":[\"goodbye\",\"universe\"]}");
+            IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
+
+            IMobileServiceTable<TypeWithArray> table = service.GetTable<TypeWithArray>();
+            var item = new TypeWithArray()
+            {
+                Id = "an id",
+                Values = new List<string> {
+                    "hello", "world"
+                }
+            };
+
+            await table.InsertAsync(item);
+
+            Assert.AreEqual("an id", item.Id);
+            Assert.AreEqual(item.Values.Count, 2);
+            Assert.AreEqual(item.Values[0], "goodbye");
+            Assert.AreEqual(item.Values[1], "universe");
         }
 
         [AsyncTestMethod]
@@ -1829,10 +1914,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.Contains(hijack.Request.RequestUri.Query, "state=CA");
         }
 
-        #endregion Insert Tests
-
-        #region Update Tests
-
         [AsyncTestMethod]
         public async Task UpdateAsyncWithStringIdTypeAndStringIdResponseContent()
         {
@@ -2027,7 +2108,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 }
 
                 Assert.IsNotNull(exception);
-                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") || 
+                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") ||
                               exception.Message.Contains("is longer than the max string id length of 255 characters"));
             }
         }
@@ -2141,7 +2222,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         public async Task UpdateAsyncWithIntIdTypeAndIntIdItem()
         {
             long[] testIdData = IdTestData.ValidIntIds
-                                          .Where( id => id != long.MaxValue) // Max value fails for serialization reasons; not because of id constraints
+                                          .Where(id => id != long.MaxValue) // Max value fails for serialization reasons; not because of id constraints
                                           .ToArray();
 
             foreach (long testId in testIdData)
@@ -2232,10 +2313,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.Contains(hijack.Request.RequestUri.ToString(), "StringType");
             Assert.Contains(hijack.Request.RequestUri.Query, "state=FL");
         }
-
-        #endregion Update Tests
-
-        #region Delete Tests
 
         [AsyncTestMethod]
         public async Task DeleteAsyncWithStringIdTypeAndStringIdItem()
@@ -2343,7 +2420,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 }
 
                 Assert.IsNotNull(exception);
-                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") || 
+                Assert.IsTrue(exception.Message.Contains("An id must not contain any control characters or the characters") ||
                               exception.Message.Contains("is longer than the max string id length of 255 characters"));
             }
         }
@@ -2443,10 +2520,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.Contains(hijack.Request.RequestUri.Query, "state=WY");
         }
 
-        #endregion Delete Tests
-
-        #region Query Tests
-
         [TestMethod]
         public void CreateQueryGeneric()
         {
@@ -2467,7 +2540,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             IMobileServiceTable<StringType> table = service.GetTable<StringType>();
 
-            TotalCountList<StringType> people = (TotalCountList<StringType>) await table.IncludeTotalCount().ToListAsync();
+            QueryResultList<StringType> people = (QueryResultList<StringType>)await table.IncludeTotalCount().ToListAsync();
 
             Assert.Contains(hijack.Request.RequestUri.ToString(), "StringType");
             Assert.Contains(hijack.Request.RequestUri.ToString(), "$inlinecount=allpages");
@@ -2486,7 +2559,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             IMobileServiceTable<StringType> table = service.GetTable<StringType>();
 
-            TotalCountEnumerable<StringType> results = (TotalCountEnumerable<StringType>)await table.IncludeTotalCount().ToEnumerableAsync();
+            QueryResultEnumerable<StringType> results = (QueryResultEnumerable<StringType>)await table.IncludeTotalCount().ToEnumerableAsync();
             StringType[] people = results.Cast<StringType>().ToArray();
 
             Assert.Contains(hijack.Request.RequestUri.ToString(), "StringType");
@@ -2566,7 +2639,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             me.String = "apple";
 
             List<string> people = await table.Select(p => p.String).ToListAsync();
-            
+
             Assert.Contains(hijack.Request.RequestUri.ToString(), "StringType");
 
             Assert.AreEqual(1, people.Count);
@@ -2643,10 +2716,6 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.Contains(hijack.Request.RequestUri.ToString(), "$skip=100");
             Assert.Contains(hijack.Request.RequestUri.ToString(), "$top=10");
         }
-
-        #endregion Query Tests
-
-        #region System Properties Tests
 
         [AsyncTestMethod]
         public async Task InsertAsyncStringIdSystemPropertiesRemovedFromRequest()
@@ -2728,9 +2797,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
                 return request;
             };
 
-            await allsystemPropertiesTable.InsertAsync(new AllSystemPropertiesType() 
-            { 
-                Version = "a version", 
+            await allsystemPropertiesTable.InsertAsync(new AllSystemPropertiesType()
+            {
+                Version = "a version",
                 UpdatedAt = new DateTime(2012, 1, 8),
                 CreatedAt = new DateTime(2012, 1, 8),
                 Id = "an id"
@@ -2871,7 +2940,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             Assert.IsNotNull(exception);
             Assert.IsTrue(exception.Message.Contains("has an integer id member and therefore can not have any members with the system property attribute"));
-            
+
         }
 
         [TestMethod]
@@ -2923,7 +2992,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         {
             TestHttpHandler hijack = new TestHttpHandler();
 
-            hijack.SetResponseContent("[{\"id\":\"an id\",\"__createdAt\":\"2000-01-01T07:59:59.000Z\"}]");
+            hijack.SetResponseContent("[{\"id\":\"an id\",\"__createdAt\":\"1999-12-31T23:59:59.000Z\"}]");
             IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
 
             IMobileServiceTable<CreatedAtType> table = service.GetTable<CreatedAtType>();
@@ -2933,9 +3002,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             Assert.AreEqual(1, items.Count());
             Assert.AreEqual("an id", items[0].Id);
-            Assert.AreEqual(new DateTime(1999, 12, 31, 23, 59, 59), items[0].CreatedAt);
+            Assert.AreEqual(new DateTime(1999, 12, 31, 23, 59, 59, DateTimeKind.Utc).ToLocalTime(), items[0].CreatedAt);
 
-            hijack.SetResponseContent("[{\"id\":\"an id\",\"__createdAt\":\"2000-01-01T07:59:59.000Z\"}]");
+            hijack.SetResponseContent("[{\"id\":\"an id\",\"__createdAt\":\"1999-12-31T23:59:59.000Z\"}]");
             IMobileServiceTable<StringCreatedAtType> stringTable = service.GetTable<StringCreatedAtType>();
 
             IEnumerable<StringCreatedAtType> stringResults = await stringTable.ReadAsync();
@@ -2943,7 +3012,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             Assert.AreEqual(1, stringItems.Count());
             Assert.AreEqual("an id", stringItems[0].Id);
-            Assert.AreEqual("01/01/2000 07:59:59", stringItems[0].CreatedAt);
+
+            // TODO: culture-specific, may fail in other formats
+            Assert.AreEqual("12/31/1999 23:59:59", stringItems[0].CreatedAt);
         }
 
         [AsyncTestMethod]
@@ -2951,7 +3022,7 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
         {
             TestHttpHandler hijack = new TestHttpHandler();
 
-            hijack.SetResponseContent("[{\"id\":\"an id\",\"__updatedAt\":\"2000-01-01T07:59:59.000Z\"}]");
+            hijack.SetResponseContent("[{\"id\":\"an id\",\"__updatedAt\":\"1999-12-31T23:59:59.000Z\"}]");
             IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
 
             IMobileServiceTable<UpdatedAtType> table = service.GetTable<UpdatedAtType>();
@@ -2961,9 +3032,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             Assert.AreEqual(1, items.Count());
             Assert.AreEqual("an id", items[0].Id);
-            Assert.AreEqual(new DateTime(1999, 12, 31, 23, 59, 59), items[0].UpdatedAt);
+            Assert.AreEqual(new DateTime(1999, 12, 31, 23, 59, 59, DateTimeKind.Utc).ToLocalTime(), items[0].UpdatedAt);
 
-            hijack.SetResponseContent("[{\"id\":\"an id\",\"__updatedAt\":\"2000-01-01T07:59:59.000Z\"}]");
+            hijack.SetResponseContent("[{\"id\":\"an id\",\"__updatedAt\":\"1999-12-31T23:59:59.000Z\"}]");
             IMobileServiceTable<StringUpdatedAtType> stringTable = service.GetTable<StringUpdatedAtType>();
 
             IEnumerable<StringUpdatedAtType> stringResults = await stringTable.ReadAsync();
@@ -2971,7 +3042,9 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
             Assert.AreEqual(1, stringItems.Count());
             Assert.AreEqual("an id", stringItems[0].Id);
-            Assert.AreEqual("01/01/2000 07:59:59", stringItems[0].UpdatedAt);
+
+            // TODO: culture-specific, may fail in other formats
+            Assert.AreEqual("12/31/1999 23:59:59", stringItems[0].UpdatedAt);
         }
 
         [AsyncTestMethod]
@@ -2992,12 +3065,25 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             Assert.AreEqual("AAAAAAAAH2o=", items[0].Version);
         }
 
-        #endregion System Properties Tests
-
+        // This test fails on mono because there is already header validation that prevents the invalid etag values this test uses.
+        // If Xamarin ever updates to use the BCL implementation of HttpClient (instead of their own) this tag can be removed.
+        [Tag("notXamarin")]
         [AsyncTestMethod]
-        public async Task VersionSystemPropertySetsIfMatchHeader()
+        public async Task UpdateAsync_SetsIfMatchHeader_WhenObjectHasVersionOnIt()
         {
-            List<Tuple<string, string>> testCases = new List<Tuple<string,string>>() {
+            await TestIfMatchHeaderIsSet((client, item) => client.UpdateAsync(item));
+        }
+
+        [Tag("notXamarin")]
+        [AsyncTestMethod]
+        public async Task DeleteAsync_SetsIfMatchHeader_WhenObjectHasVersionOnIt()
+        {
+            await TestIfMatchHeaderIsSet((client, item) => client.DeleteAsync(item));
+        }
+
+        private static async Task TestIfMatchHeaderIsSet(Func<IMobileServiceTable<VersionType>, VersionType, Task> action)
+        {
+            List<Tuple<string, string>> testCases = new List<Tuple<string, string>>() {
                 new Tuple<string, string>("AAAAAAAAH2o=", "\"AAAAAAAAH2o=\""),
                 new Tuple<string, string>("a version", "\"a version\""),
                 new Tuple<string, string>("a version with a \" quote", "\"a version with a \\\" quote\""),
@@ -3017,20 +3103,19 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
 
                 IMobileServiceTable<VersionType> table = service.GetTable<VersionType>();
 
-                hijack.OnSendingRequest = async (request) =>
+                hijack.OnSendingRequest = (request) =>
                 {
-                    string content = await request.Content.ReadAsStringAsync();
-                    JObject jobject = JObject.Parse(content);
                     Assert.AreEqual(request.Headers.IfMatch.First().Tag, testcase.Item2);
-                    return request;
+                    return Task.FromResult(request);
                 };
-
-                VersionType item = new VersionType() { Id = "an id", Version = testcase.Item1 };
-                await table.UpdateAsync(item);
-
+                var item = new VersionType() { Id = "an id", Version = testcase.Item1 };
+                await action(table, item);
             }
         }
 
+        // This test fails on mono because there is already header validation that prevents the invalid etag values this test uses.
+        // If Xamarin ever updates to use the BCL implementation of HttpClient (instead of their own) this tag can be removed.
+        [Tag("notXamarin")]
         [AsyncTestMethod]
         public async Task VersionSystemPropertySetFromEtagHeader()
         {
@@ -3062,8 +3147,142 @@ namespace Microsoft.WindowsAzure.MobileServices.Test
             }
         }
 
-        #region ETag Tests
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableToList()
+        {
+            return this.ValidateFeaturesHeader("TT", true, t => t.ToListAsync());
+        }
 
-        #endregion
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableReadViaQuery()
+        {
+            return this.ValidateFeaturesHeader("TT", true, t => t.Where(s => s.String != null).ToListAsync());
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableLookup()
+        {
+            return this.ValidateFeaturesHeader("TT", false, t => t.LookupAsync("id"));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableRefresh()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT", false, t => t.RefreshAsync(obj));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableInsert()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT", false, t => t.InsertAsync(obj));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableUpdate()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT", false, t => t.UpdateAsync(obj));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableDelete()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT", false, t => t.DeleteAsync(obj));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableUntypedMethod()
+        {
+            var obj = JObject.Parse("{\"id\":\"the id\",\"String\":\"hey\"}");
+            return this.ValidateFeaturesHeader("TU", false, t => t.InsertAsync(obj));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableToEnumerableWithQuery()
+        {
+            return this.ValidateFeaturesHeader("TT,QS", true, t => t.WithParameters(new Dictionary<string, string> { { "a", "b" } }).ToEnumerableAsync());
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableReadViaQueryWithQuery()
+        {
+            return this.ValidateFeaturesHeader("TT,QS", true, t => t.Where(s => s.String != null).WithParameters(new Dictionary<string, string> { { "a", "b" } }).ToListAsync());
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableLookupWithQuery()
+        {
+            return this.ValidateFeaturesHeader("TT,QS", false, t => t.LookupAsync("id", new Dictionary<string, string> { { "a", "b" } }));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableRefreshWithQuery()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT,QS", false, t => t.RefreshAsync(obj, new Dictionary<string, string> { { "a", "b" } }));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableInsertWithQuery()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT,QS", false, t => t.InsertAsync(obj, new Dictionary<string, string> { { "a", "b" } }));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableUpdateWithQuery()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT,QS", false, t => t.UpdateAsync(obj, new Dictionary<string, string> { { "a", "b" } }));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableDeleteWithQuery()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT,QS", false, t => t.DeleteAsync(obj, new Dictionary<string, string> { { "a", "b" } }));
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableToCollection()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT,TC", true, t => t.ToCollectionAsync());
+        }
+
+        [AsyncTestMethod]
+        public Task FeatureHeaderValidation_TypedTableViaQueryToCollection()
+        {
+            var obj = new StringIdType { Id = "the id", String = "hey" };
+            return this.ValidateFeaturesHeader("TT,TC", true, t => t.Where(a => a.String != null).ToCollectionAsync());
+        }
+
+        private async Task ValidateFeaturesHeader(string expectedFeaturesHeader, bool arrayResponse, Func<IMobileServiceTable<StringIdType>, Task> operation)
+        {
+            TestHttpHandler hijack = new TestHttpHandler();
+            bool validationDone = false;
+            hijack.OnSendingRequest = (request) =>
+            {
+                Assert.AreEqual(expectedFeaturesHeader, request.Headers.GetValues("X-ZUMO-FEATURES").First());
+                validationDone = true;
+                return Task.FromResult(request);
+            };
+
+            IMobileServiceClient service = new MobileServiceClient("http://www.test.com", "secret...", hijack);
+            IMobileServiceTable<StringIdType> table = service.GetTable<StringIdType>();
+
+            var responseContent = "{\"id\":\"the id\",\"String\":\"Hey\"}";
+            if (arrayResponse)
+            {
+                responseContent = "[" + responseContent + "]";
+            }
+
+            hijack.SetResponseContent(responseContent);
+            await operation(table);
+            Assert.IsTrue(validationDone);
+        }
     }
 }

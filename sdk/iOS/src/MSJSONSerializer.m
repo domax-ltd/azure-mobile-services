@@ -10,12 +10,12 @@
 #pragma mark * Mobile Services Special Keys String Constants
 
 
-NSString *const idKey = @"id";
-NSString *const resultsKey = @"results";
-NSString *const countKey = @"count";
-NSString *const errorKey = @"error";
-NSString *const descriptionKey = @"description";
-NSString *const stringIdPattern = @"[+?`""/\\\\]|[\\u0000-\\u001F]|[\\u007F-\\u009F]|^\\.{1,2}$";
+static NSString *const idKey = @"id";
+static NSString *const resultsKey = @"results";
+static NSString *const countKey = @"count";
+static NSString *const errorKey = @"error";
+static NSString *const descriptionKey = @"description";
+static NSString *const stringIdPattern = @"[+?`\"/\\\\]|[\\u0000-\\u001F]|[\\u007F-\\u009F]|^\\.{1,2}$";
 
 #pragma mark * MSJSONSerializer Implementation
 
@@ -267,6 +267,40 @@ static NSArray *allIdKeys;
     return item;
 }
 
+-(NSArray *) arrayFromData:(NSData *)data
+           orError:(NSError **)error
+{
+    id jsonObject = nil;
+    NSError *localError = nil;
+    
+    // Ensure there is data
+    if (!data) {
+        localError = [self errorForNilData];
+    }
+    else {
+        
+        // Try to deserialize the data; if it fails the error will be set
+        // and item will be nil.
+        jsonObject = [NSJSONSerialization JSONObjectWithData:data
+                                               options:NSJSONReadingAllowFragments
+                                                 error:error];
+        
+        if (jsonObject) {
+            // The data should have been of array type
+            if (![jsonObject isKindOfClass:[NSArray class]]) {
+                jsonObject = nil;
+                localError = [self errorForExpectedArray];
+            }
+        }
+    }
+    
+    if (localError && error) {
+        *error = localError;
+    }
+    
+    return jsonObject;
+}
+
 -(NSInteger) totalCountAndItems:(NSArray **)items
                        fromData:(NSData *)data
                         orError:(NSError **)error
@@ -469,8 +503,13 @@ static NSArray *allIdKeys;
         }
     }
     else if ([item isKindOfClass:[NSString class]]) {
-        NSDateFormatter *formatter =
-        [MSNaiveISODateFormatter naiveISODateFormatter];
+        NSDateFormatter *formatter;
+        if ([item rangeOfString:@"."].location == NSNotFound) {
+            formatter = [MSNaiveISODateFormatter naiveISODateNoFractionalSecondsFormatter];
+        } else {
+            formatter = [MSNaiveISODateFormatter naiveISODateFormatter];
+        }
+        
         NSDate *date = [formatter dateFromString:item];
         postDeserializedItem = (date) ? date : item;
     }
@@ -529,6 +568,12 @@ static NSArray *allIdKeys;
 -(NSError *) errorForExpectedItem
 {
     return [self errorWithDescriptionKey:@"The server did not return the expected item."
+                            andErrorCode:MSExpectedItemWithResponse];
+}
+
+-(NSError *) errorForExpectedArray
+{
+    return [self errorWithDescriptionKey:@"The server did not return object of expected array type."
                             andErrorCode:MSExpectedItemWithResponse];
 }
 

@@ -10,7 +10,7 @@
 #import "MSAPIRequest.h"
 #import "MSAPIConnection.h"
 #import "MSJSONSerializer.h"
-
+#import "MSPush.h"
 
 #pragma mark * MSClient Private Interface
 
@@ -113,6 +113,7 @@
         applicationURL_ = url;
         applicationKey_ = [key copy];
         login_ = [[MSLogin alloc] initWithClient:self];
+        _push = [[MSPush alloc] initWithClient:self];
     }
     return self;
 }
@@ -137,6 +138,8 @@
     
     // Set the new filters on the copied client
     newClient.filters = filters;
+    
+    newClient.connectionDelegateQueue = self.connectionDelegateQueue;
     
     return newClient;
 }

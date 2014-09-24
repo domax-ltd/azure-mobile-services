@@ -25,6 +25,7 @@ typedef void (^ZumoTestExecution)(ZumoTest *test, UIViewController *viewControll
 @property (nonatomic) BOOL canRunUnattended;
 @property (nonatomic, copy) NSDate *startTime;
 @property (nonatomic, copy) NSDate *endTime;
+@property (nonatomic, strong) NSMutableArray *requiredFeatures;
 
 + (ZumoTest *)createTestWithName:(NSString *)name andExecution:(ZumoTestExecution)steps;
 
@@ -32,6 +33,7 @@ typedef void (^ZumoTestExecution)(ZumoTest *test, UIViewController *viewControll
 - (void)startExecutingFrom:(UIViewController *)currentViewController;
 - (void)addLog:(NSString *)text;
 - (NSArray *)getLogs;
+- (void)addRequiredFeature:(NSString *)featureName;
 
 + (NSString *)testStatusToString:(TestStatus)status;
 

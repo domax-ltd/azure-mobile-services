@@ -11,6 +11,10 @@ var Validate = require('Validate');
 var Platform = require('Platform');
 var MobileServiceTable = require('MobileServiceTable').MobileServiceTable;
 var MobileServiceLogin = require('MobileServiceLogin').MobileServiceLogin;
+var Push;
+try {
+    Push = require('Push').Push;
+} catch(e) {}
 
 function MobileServiceClient(applicationUrl, applicationKey) {
     /// <summary>
@@ -52,6 +56,10 @@ function MobileServiceClient(applicationUrl, applicationKey) {
         Validate.notNullOrEmpty(tableName, 'tableName');
         return new MobileServiceTable(tableName, this);
     };
+    
+    if (Push) {
+        this.push = new Push(this);
+    }
 }
 
 // Export the MobileServiceClient class
@@ -163,6 +171,11 @@ MobileServiceClient.prototype._request = function (method, uriFragment, content,
         callback = ignoreFilters;
         ignoreFilters = false;
     }
+    
+    if (_.isNull(callback) && (typeof content === 'function')) {
+        callback = content;
+        content = null;
+    }
 
     Validate.isString(method, 'method');
     Validate.notNullOrEmpty(method, 'method');
@@ -249,7 +262,7 @@ MobileServiceClient.prototype.login = Platform.async(
         /// <param name="useSingleSignOn" type="Boolean" mayBeNull="true">
         /// Only applies to Windows 8 clients.  Will be ignored on other platforms.
         /// Indicates if single sign-on should be used. Single sign-on requires that the 
-        /// application's Package SID be registered with the Windows Azure Mobile Service, 
+        /// application's Package SID be registered with the Microsoft Azure Mobile Service, 
         /// but it provides a better experience as HTTP cookies are supported so that users 
         /// do not have to login in everytime the application is launched.
         /// </param>

@@ -214,7 +214,7 @@ exports.login = function (startUri, endUri, callback) {
     else {
         // If no endURI was given, then we'll use the single sign-on overload of the 
         // windowsWebAuthBroker. Single sign-on requires that the application's Package SID 
-        // be registered with the Windows Azure Mobile Service, but it provides a better 
+        // be registered with the Microsoft Azure Mobile Service, but it provides a better 
         // experience as HTTP cookies are supported so that users do not have to
         // login in everytime the application is launched.
         var redirectUri = windowsWebAuthBroker.getCurrentApplicationCallbackUri().absoluteUri;
@@ -283,7 +283,7 @@ exports.tryParseIsoDateString = function (text) {
     Validate.isString(text);
 
     // Check against a lenient regex
-    if (/^(\d{4})-(\d{2})-(\d{2})T(\d{2})\:(\d{2})\:(\d{2})(\.(\d{3}))?Z$/.test(text)) {
+    if (/^(\d{4})-(\d{2})-(\d{2})T(\d{2})\:(\d{2})\:(\d{2})(\.(\d{1,3}))?Z$/.test(text)) {
         // Try and parse - it will return NaN if invalid
         var ticks = Date.parse(text);
         if (!isNaN(ticks)) {

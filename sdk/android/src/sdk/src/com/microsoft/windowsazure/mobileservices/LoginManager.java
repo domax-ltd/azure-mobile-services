@@ -30,12 +30,15 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.protocol.HTTP;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Bitmap;
+import android.util.DisplayMetrics;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.EditText;
@@ -184,7 +187,7 @@ class LoginManager {
 	}
 
 	/**
-	 * Invokes Windows Azure Mobile Service authentication using a
+	 * Invokes Microsoft Azure Mobile Service authentication using a
 	 * provider-specific oAuth token
 	 * 
 	 * @param provider
@@ -274,6 +277,12 @@ class LoginManager {
 			}
 		});
 		wv.getSettings().setJavaScriptEnabled(true);
+		
+		DisplayMetrics displaymetrics = new DisplayMetrics();
+		((Activity)context).getWindowManager().getDefaultDisplay().getMetrics(displaymetrics);
+		int webViewHeight = displaymetrics.heightPixels;
+		
+		wv.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, webViewHeight));
 
 		wv.requestFocus(View.FOCUS_DOWN);
 		wv.setOnTouchListener(new View.OnTouchListener() {
@@ -364,7 +373,7 @@ class LoginManager {
 	}
 
 	/**
-	 * Creates a User based on a Windows Azure Mobile Service JSON object
+	 * Creates a User based on a Microsoft Azure Mobile Service JSON object
 	 * containing a UserId and Authentication Token
 	 * 
 	 * @param json
@@ -411,7 +420,7 @@ class LoginManager {
 	}
 
 	/**
-	 * Invokes Windows Azure Mobile Services authentication using the specified
+	 * Invokes Microsoft Azure Mobile Services authentication using the specified
 	 * token
 	 * 
 	 * @param token
@@ -480,7 +489,7 @@ class LoginManager {
 					}
 				}
 			}
-		}.execute();
+		}.executeTask();
 	}
 
 	/**

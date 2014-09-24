@@ -76,10 +76,18 @@ function defineRoundTripTestsNamespace() {
     tests.push(createRoundTripTest('Complex type (array): array with null elements', 'complexType',
         [{ Name: 'Scooby Doo', Age: 10 }, null, { Name: 'Shaggy', Age: 19 }]));
 
-    tests.push(createNegativeRoundTripTest('(Neg) Insert item with \'id\' property (value = 0)', { id: 0, string1: 'hello' }));
+    tests.push(createRoundTripTest('Invalid id: zero', 'id', 0));
+    tests.push(createRoundTripTest('Invalid id: empty', 'id', ''));
+    tests.push(createRoundTripTest('Invalid id: null', 'id', null));
     tests.push(createNegativeRoundTripTest('(Neg) Insert item with \'id\' property (value = 1)', { id: 1, string1: 'hello' }));
     tests.push(createNegativeRoundTripTest('(Neg) Insert item with \'Id\' property (value = 1)', { Id: 1, string1: 'hello' }));
     tests.push(createNegativeRoundTripTest('(Neg) Insert item with \'ID\' property (value = 1)', { ID: 1, string1: 'hello' }));
+
+    for (var i = 0; i < tests.length; i++) {
+        tests[i].addRequiredFeature(zumo.runtimeFeatureNames.INT_ID_TABLES);
+    }
+
+    var firstStringIdTestIndex = tests.length;
 
     tests.push(new zumo.Test('Setup string id dynamic schema', function (test, done) {
         var table = zumo.getClient().getTable(stringIdTableName);
@@ -114,6 +122,10 @@ function defineRoundTripTestsNamespace() {
     invalidIds.forEach(function (id) {
         tests.push(createNegativeRoundTripTest('(Neg) String id - insert with invalid id: ' + (id.length > 30 ? (id.substring(0, 30) + '...') : id), { id: id, name: 'hello' }));
     });
+
+    for (var i = firstStringIdTestIndex; i < tests.length; i++) {
+        tests[i].addRequiredFeature(zumo.runtimeFeatureNames.STRING_ID_TABLES);
+    }
 
     var currentIEVersion = zumo.getIEBrowserVersion(); // get IE8 version ...
     function dateReviver(key, value) {
@@ -243,6 +255,9 @@ function defineRoundTripTestsNamespace() {
                     table.lookup(id).done(function (retrieved) {
                         test.addLog('Retrieved the item from the service: ' + JSON.stringify(retrieved));
                         var errors = [];
+                        if (propertyName === 'id') {
+                            originalItem.id = id;
+                        }
                         if (zumo.util.compare(originalItem, retrieved, errors)) {
                             test.addLog('Object round tripped successfully.');
                             done(true);
